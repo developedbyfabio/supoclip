@@ -9,6 +9,7 @@ import assemblyai as aai
 from ..config import get_config
 import httpx
 import json
+import os
 import re
 import time
 from .common import (
@@ -186,22 +187,105 @@ def _get_whisper_model(model_name: str = "base"):
     return _WHISPER_MODEL_CACHE[model_name]
 
 
+def _get_faster_whisper_model(model_name: str):
+    """Load and cache a faster-whisper model: float16 on CUDA, int8 on CPU."""
+    cache_key = f"faster-whisper:{model_name}"
+    if cache_key not in _WHISPER_MODEL_CACHE:
+        import ctranslate2
+        from faster_whisper import WhisperModel
+
+        device = "cuda" if ctranslate2.get_cuda_device_count() > 0 else "cpu"
+        compute_type = "float16" if device == "cuda" else "int8"
+        logger.info(
+            "Loading faster-whisper model: %s (device: %s, compute: %s)",
+            model_name,
+            device,
+            compute_type,
+        )
+        _WHISPER_MODEL_CACHE[cache_key] = WhisperModel(
+            model_name,
+            device=device,
+            compute_type=compute_type,
+            cpu_threads=os.cpu_count() or 4,
+        )
+    return _WHISPER_MODEL_CACHE[cache_key]
+
+
+def _transcribe_with_faster_whisper(
+    audio_path: Path, model_name: str, language: Optional[str]
+) -> Dict[str, Any]:
+    """Run faster-whisper and return the same dict shape as openai-whisper."""
+    model = _get_faster_whisper_model(model_name)
+    segments, info = model.transcribe(
+        str(audio_path),
+        language=language,
+        word_timestamps=True,
+        beam_size=1,
+        vad_filter=True,
+    )
+    duration = float(info.duration or 0)
+    logger.info(
+        "faster-whisper detected language %s; transcribing %.0fs of audio",
+        info.language,
+        duration,
+    )
+
+    result_segments: List[Dict[str, Any]] = []
+    next_report = 10
+    for segment in segments:
+        result_segments.append(
+            {
+                "start": float(segment.start),
+                "end": float(segment.end),
+                "text": segment.text,
+                "words": [
+                    {
+                        "word": word.word,
+                        "start": float(word.start),
+                        "end": float(word.end),
+                        "probability": float(word.probability),
+                    }
+                    for word in segment.words or []
+                ],
+            }
+        )
+        if duration > 0:
+            percent = int(min(segment.end / duration, 1.0) * 100)
+            if percent >= next_report:
+                logger.info("Transcription progress: %d%%", percent)
+                next_report = (percent // 10 + 1) * 10
+
+    return {
+        "text": "".join(segment["text"] for segment in result_segments),
+        "segments": result_segments,
+        "language": info.language,
+    }
+
+
 def transcribe_with_whisper(
     video_path: Path, model_name: str = "base", language: Optional[str] = None
 ) -> Dict[str, Any]:
     """Transcribe video using local Whisper with word-level timestamps.
 
+    Prefers faster-whisper (CTranslate2, several times faster on CPU) and falls
+    back to openai-whisper when it is not installed.
+
     ``language`` None lets Whisper detect it; AssemblyAI-style codes such as
     ``en_us`` are reduced to the ISO 639-1 base Whisper expects.
     """
     audio_path = _prepare_audio_for_transcription(video_path)
-    model = _get_whisper_model(model_name)
     whisper_language = language.split("_", 1)[0] if language else None
     logger.info(
         "Starting Whisper transcription with model: %s (language: %s)",
         model_name,
         whisper_language or "auto",
     )
+    try:
+        return _transcribe_with_faster_whisper(audio_path, model_name, whisper_language)
+    except ImportError:
+        logger.warning("faster-whisper is not installed; using openai-whisper")
+
+    model = _get_whisper_model(model_name)
     return model.transcribe(str(audio_path), word_timestamps=True, language=whisper_language)
 
 

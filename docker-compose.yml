@@ -289,6 +289,8 @@ services:
       - ./backend/src:/app/src
       - uploads:/app/uploads
       - clips:/app/clips
+      # faster-whisper models, kept across container recreation.
+      - model_cache:/root/.cache/huggingface
       - ./backend/fonts:/app/fonts
       - ./backend/transitions:/app/transitions
     environment:
@@ -506,6 +508,8 @@ volumes:
   postgres_data:
     driver: local
   mcp_downloads:
+    driver: local
+  model_cache:
     driver: local
   vector_data:
     driver: local
