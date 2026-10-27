@@ -112,5 +112,24 @@
     "disconnect": "Trennen",
     "analytics": "Analysen",
     "analyticsHint": "Aufrufe, Likes und Kommentare deiner veröffentlichten Clips, nach Plattform, Hook und Länge."
+  },
+  "autoPublish": {
+    "heading": "Automatisches Posten",
+    "enabled": "Die besten Clips automatisch posten",
+    "enabledHint": "Sobald ein Video fertig verarbeitet ist, werden die Clips mit der höchsten Bewertung in deine nächsten freien Zeitfenster eingeplant.",
+    "accounts": "Posten auf",
+    "noAccounts": "Verbinde oben ein Konto, um automatisches Posten zu nutzen.",
+    "clipsPerTask": "Clips pro Video",
+    "minScore": "Mindestbewertung (0–100)",
+    "postTimes": "Postzeiten",
+    "postTimesHint": "Ein Clip pro Zeitfenster und Konto. Zeitzone: {timezone}.",
+    "privacy": "Sichtbarkeit",
+    "hashtags": "Hashtags",
+    "save": "Speichern",
+    "saving": "Wird gespeichert...",
+    "savedOn": "Automatisches Posten ist aktiv. Es gilt für die nächsten verarbeiteten Videos.",
+    "savedOff": "Einstellungen gespeichert. Automatisches Posten ist aus.",
+    "loadError": "Automatisches Posten konnte nicht geladen werden.",
+    "saveError": "Automatisches Posten konnte nicht gespeichert werden."
   }
 }

@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { AutoPublishSettings } from "@/components/auto-publish-settings";
 import { ScheduledPosts } from "@/components/scheduled-posts";
 import { SocialProviderIcon } from "@/components/social-provider-icon";
 import { isSocialPublishingEnabled } from "@/hooks/use-social-access";
@@ -340,6 +341,11 @@ function SocialSettingsContent() {
           </div>
         )}
       </section>
+
+      {/* Auto-publish */}
+      {!isFetching && connections.length > 0 && (
+        <AutoPublishSettings connections={connections} sectionHeadingClassName={SECTION_HEADING} />
+      )}
 
       {/* Scheduled */}
       {!isFetching && connections.length > 0 && <ScheduledPosts sectionHeadingClassName={SECTION_HEADING} />}

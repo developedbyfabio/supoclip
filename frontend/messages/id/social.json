@@ -112,5 +112,24 @@
     "disconnect": "Putuskan",
     "analytics": "Analitik",
     "analyticsHint": "Penayangan, suka, dan komentar dari clip yang kamu publikasikan, menurut platform, hook, dan durasi."
+  },
+  "autoPublish": {
+    "heading": "Posting otomatis",
+    "enabled": "Posting klip terbaik secara otomatis",
+    "enabledHint": "Saat video selesai diproses, klip dengan skor tertinggi dijadwalkan ke slot kosong berikutnya.",
+    "accounts": "Posting ke",
+    "noAccounts": "Hubungkan akun di atas untuk memakai posting otomatis.",
+    "clipsPerTask": "Klip per video",
+    "minScore": "Skor minimum (0–100)",
+    "postTimes": "Waktu posting",
+    "postTimesHint": "Satu klip per slot waktu, per akun. Zona waktu: {timezone}.",
+    "privacy": "Visibilitas",
+    "hashtags": "Hashtag",
+    "save": "Simpan",
+    "saving": "Menyimpan...",
+    "savedOn": "Posting otomatis aktif. Berlaku untuk video berikutnya yang diproses.",
+    "savedOff": "Pengaturan disimpan. Posting otomatis nonaktif.",
+    "loadError": "Gagal memuat posting otomatis.",
+    "saveError": "Gagal menyimpan posting otomatis."
   }
 }

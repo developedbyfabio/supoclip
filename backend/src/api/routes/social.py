@@ -152,6 +152,26 @@ async def disconnect_account(
 
 
 # ----------------------------------------------------------------------
+# Auto-publish rule
+# ----------------------------------------------------------------------
+@router.get("/auto-publish")
+async def get_auto_publish(request: Request, db: AsyncSession = Depends(get_db)):
+    user_id = await _allowed_user_id(request, db)
+    return {"rule": await _service(request, db).get_auto_publish(user_id)}
+
+
+@router.post("/auto-publish")
+async def save_auto_publish(request: Request, db: AsyncSession = Depends(get_db)):
+    """Only session users change the rule, like connecting accounts."""
+    user_id = await _allowed_user_id(request, db, session_only=True)
+    try:
+        rule = await _service(request, db).save_auto_publish(user_id, await _json_body(request))
+    except SocialError as exc:
+        raise _http_error(exc)
+    return {"rule": rule}
+
+
+# ----------------------------------------------------------------------
 # Posts
 # ----------------------------------------------------------------------
 @router.get("/posts")

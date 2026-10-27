@@ -112,5 +112,24 @@
     "disconnect": "Desconectar",
     "analytics": "Analítica",
     "analyticsHint": "Vistas, me gusta y comentarios de tus clips publicados, por plataforma, gancho y duración."
+  },
+  "autoPublish": {
+    "heading": "Publicación automática",
+    "enabled": "Publicar automáticamente los mejores clips",
+    "enabledHint": "Cuando un video termina de procesarse, sus clips con mayor puntuación se programan en tus próximos horarios libres.",
+    "accounts": "Publicar en",
+    "noAccounts": "Conecta una cuenta arriba para usar la publicación automática.",
+    "clipsPerTask": "Clips por video",
+    "minScore": "Puntuación mínima (0–100)",
+    "postTimes": "Horarios de publicación",
+    "postTimesHint": "Un clip por horario, por cuenta. Zona horaria: {timezone}.",
+    "privacy": "Visibilidad",
+    "hashtags": "Hashtags",
+    "save": "Guardar",
+    "saving": "Guardando...",
+    "savedOn": "Publicación automática activada. Se aplica a los próximos videos procesados.",
+    "savedOff": "Configuración guardada. La publicación automática está desactivada.",
+    "loadError": "No se pudo cargar la publicación automática.",
+    "saveError": "No se pudo guardar la publicación automática."
   }
 }

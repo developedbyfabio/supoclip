@@ -634,6 +634,7 @@ class TaskService(ClipEditingMixin):
                 task_id=task_id,
                 clips_count=len(clip_ids),
             )
+            await self._auto_publish_if_enabled(user_id=user_id, task_id=task_id)
 
             logger.info(
                 f"Task {task_id} completed successfully with {len(clip_ids)} clips"
@@ -703,6 +704,19 @@ class TaskService(ClipEditingMixin):
                 # Also handles failures before process_video_complete returns a
                 # path (and therefore before the generic path cleanup can run).
                 await run_in_thread(cleanup_stream_task, task_id)
+
+    async def _auto_publish_if_enabled(self, *, user_id: Optional[str], task_id: str) -> None:
+        """Schedule clips per the user's auto-publish rule without failing the task."""
+        if not user_id:
+            return
+        # Imported here: the social service pulls in billing and the job queue.
+        from .social_service import SocialService
+
+        try:
+            await SocialService(self.db, self.config).auto_publish_task(user_id, task_id)
+        except Exception:
+            logger.exception("Auto-publish failed for task %s", task_id)
+            await self.db.rollback()
 
     async def _send_completion_notification_if_needed(
         self, *, task_id: str, clips_count: int

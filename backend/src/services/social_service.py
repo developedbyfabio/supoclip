@@ -20,6 +20,7 @@ import unicodedata
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,6 +70,22 @@ MOBILE_CLIENTS = frozenset({"ios"})
 MAX_TITLE_LENGTH = 255
 MAX_CAPTION_LENGTH = 2200
 _HASHTAG_RE = re.compile(r"[^0-9A-Za-z_À-￿]+")
+# Auto-publish: clips land in the next free daily slot at least this far ahead.
+AUTO_PUBLISH_LEAD_MINUTES = 10
+AUTO_PUBLISH_HORIZON_DAYS = 120
+AUTO_PUBLISH_MAX_CLIPS = 10
+AUTO_PUBLISH_MAX_TIMES = 6
+DEFAULT_AUTO_PUBLISH: Dict[str, Any] = {
+    "enabled": False,
+    "social_account_ids": [],
+    "clips_per_task": 2,
+    "min_virality_score": 0,
+    "post_times": ["18:00"],
+    "timezone": "America/Sao_Paulo",
+    "privacy_level": "public",
+    "hashtags": [],
+}
+_POST_TIME_RE = re.compile(r"(\d{1,2}):(\d{2})")
 
 
 class SocialError(Exception):
@@ -464,6 +481,129 @@ class SocialService:
             "Created social post %s (%s, %s) for clip %s", post["id"], provider.name, status, clip_id
         )
         return post
+
+    # ------------------------------------------------------------------
+    # Auto-publish
+    # ------------------------------------------------------------------
+    async def get_auto_publish(self, user_id: str) -> Dict[str, Any]:
+        rule = await self.repo.get_auto_publish(self.db, user_id)
+        return rule or {**DEFAULT_AUTO_PUBLISH, "updated_at": None}
+
+    async def save_auto_publish(self, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        enabled = bool(payload.get("enabled"))
+
+        account_ids: List[str] = []
+        for account_id in payload.get("social_account_ids") or []:
+            if not isinstance(account_id, str) or account_id in account_ids:
+                continue
+            account = await self.repo.get_user_account(self.db, user_id, account_id)
+            if not account or account.get("revoked_at"):
+                raise SocialNotFound("Connected account not found")
+            account_ids.append(account_id)
+        if enabled and not account_ids:
+            raise SocialValidationError("Choose at least one connected account.")
+
+        clips_per_task = _bounded_int(payload.get("clips_per_task"), 1, AUTO_PUBLISH_MAX_CLIPS, "clips_per_task")
+        min_score = _bounded_int(payload.get("min_virality_score"), 0, 100, "min_virality_score")
+
+        post_times = sorted({_normalize_post_time(value) for value in payload.get("post_times") or []})
+        if not post_times:
+            raise SocialValidationError("Add at least one posting time.")
+        if len(post_times) > AUTO_PUBLISH_MAX_TIMES:
+            raise SocialValidationError(f"Use at most {AUTO_PUBLISH_MAX_TIMES} posting times.")
+
+        timezone_name = str(payload.get("timezone") or DEFAULT_AUTO_PUBLISH["timezone"]).strip()
+        try:
+            ZoneInfo(timezone_name)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise SocialValidationError("Unknown timezone") from exc
+
+        privacy_level = str(payload.get("privacy_level") or "public").strip().lower()
+        if privacy_level not in PRIVACY_LEVELS:
+            raise SocialValidationError(f"privacy_level must be one of: {', '.join(PRIVACY_LEVELS)}")
+
+        if enabled and not await self.can_schedule(user_id):
+            raise SocialPlanRequired("Automatic posting needs scheduling, available on the Creator plan.")
+
+        return await self.repo.upsert_auto_publish(
+            self.db,
+            user_id,
+            {
+                "enabled": enabled,
+                "social_account_ids": account_ids,
+                "clips_per_task": clips_per_task,
+                "min_virality_score": min_score,
+                "post_times": post_times,
+                "timezone": timezone_name,
+                "privacy_level": privacy_level,
+                "hashtags": normalize_hashtags(payload.get("hashtags")),
+            },
+        )
+
+    async def auto_publish_task(self, user_id: str, task_id: str) -> List[str]:
+        """Schedule a finished task's best clips into the user's next free slots."""
+        rule = await self.repo.get_auto_publish(self.db, user_id)
+        if not rule or not rule["enabled"] or not rule["social_account_ids"]:
+            return []
+        if not await self.has_access(user_id):
+            return []
+
+        clips = await self.clip_repo.get_clips_by_task(self.db, task_id)
+        eligible = [
+            clip for clip in clips
+            if int(clip.get("virality_score") or 0) >= rule["min_virality_score"]
+        ]
+        eligible.sort(key=lambda clip: int(clip.get("virality_score") or 0), reverse=True)
+        chosen = eligible[: rule["clips_per_task"]]
+        if not chosen:
+            logger.info("Auto-publish: no clip of task %s reached the minimum score", task_id)
+            return []
+
+        now = datetime.now(timezone.utc)
+        created: List[str] = []
+        for account_id in rule["social_account_ids"]:
+            account = await self.repo.get_user_account(self.db, user_id, account_id)
+            if not account or account.get("revoked_at"):
+                continue
+            try:
+                provider = self._provider(account["provider"])
+            except SocialError as exc:
+                logger.warning("Auto-publish skipped account %s: %s", account_id, exc)
+                continue
+            privacy = rule["privacy_level"]
+            if privacy not in provider.supported_privacy_levels:
+                privacy = provider.default_privacy_level
+
+            taken = {
+                _slot_key(slot)
+                for slot in await self.repo.list_taken_slots(self.db, account_id, now)
+            }
+            for clip in chosen:
+                if await self.repo.clip_has_post(self.db, clip["id"], account_id):
+                    continue
+                slot = _next_free_slot(rule["post_times"], rule["timezone"], taken, now)
+                taken.add(_slot_key(slot))
+                try:
+                    post = await self.create_post(
+                        user_id,
+                        task_id=task_id,
+                        clip_id=clip["id"],
+                        social_account_id=account_id,
+                        title=None,
+                        caption=None,
+                        hashtags=rule["hashtags"],
+                        privacy_level=privacy,
+                        scheduled_for=slot.isoformat(),
+                    )
+                except SocialError as exc:
+                    logger.warning(
+                        "Auto-publish skipped clip %s on account %s: %s", clip["id"], account_id, exc
+                    )
+                    continue
+                created.append(post["id"])
+
+        logger.info("Auto-publish scheduled %d post(s) for task %s", len(created), task_id)
+        return created
 
     async def _enqueue_publish(
         self, post_id: str, attempts: int, defer_seconds: int = 0
@@ -1049,6 +1189,50 @@ def normalize_hashtags(raw: Optional[List[str]]) -> List[str]:
         if len(result) >= MAX_HASHTAGS:
             break
     return result
+
+
+def _bounded_int(value: Any, low: int, high: int, field: str) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise SocialValidationError(f"{field} must be a number") from exc
+    if not low <= number <= high:
+        raise SocialValidationError(f"{field} must be between {low} and {high}")
+    return number
+
+
+def _normalize_post_time(value: Any) -> str:
+    match = _POST_TIME_RE.fullmatch(str(value or "").strip())
+    if not match:
+        raise SocialValidationError("Posting times must use the HH:MM format")
+    hour, minute = int(match.group(1)), int(match.group(2))
+    if hour > 23 or minute > 59:
+        raise SocialValidationError("Posting times must use the HH:MM format")
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _slot_key(value: datetime) -> datetime:
+    """Compare slots by UTC minute so equal times match across timezones."""
+    return value.astimezone(timezone.utc).replace(second=0, microsecond=0)
+
+
+def _next_free_slot(
+    post_times: List[str], timezone_name: str, taken: set, now: datetime
+) -> datetime:
+    """First configured local time after the lead window that no post claims."""
+    zone = ZoneInfo(timezone_name)
+    earliest = now + timedelta(minutes=AUTO_PUBLISH_LEAD_MINUTES)
+    local_today = earliest.astimezone(zone).date()
+    for day_offset in range(AUTO_PUBLISH_HORIZON_DAYS):
+        day = local_today + timedelta(days=day_offset)
+        for post_time in post_times:
+            hour, minute = (int(part) for part in post_time.split(":"))
+            candidate = datetime(day.year, day.month, day.day, hour, minute, tzinfo=zone)
+            if candidate <= earliest:
+                continue
+            if _slot_key(candidate) not in taken:
+                return candidate.astimezone(timezone.utc)
+    raise SocialValidationError("No free posting slot in the next days.")
 
 
 def _parse_schedule(value: Optional[str]) -> Optional[datetime]:

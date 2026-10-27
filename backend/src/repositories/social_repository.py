@@ -1166,6 +1166,108 @@ class SocialRepository:
         )
         return [SocialRepository.serialize_post(row) for row in result.fetchall()]
 
+    # ------------------------------------------------------------------
+    # Auto-publish rule
+    # ------------------------------------------------------------------
+    @staticmethod
+    async def get_auto_publish(db: AsyncSession, user_id: str) -> Optional[Dict[str, Any]]:
+        result = await db.execute(
+            text(
+                """
+                SELECT enabled, social_account_ids, clips_per_task, min_virality_score,
+                       post_times, timezone, privacy_level, hashtags, updated_at
+                FROM social_auto_publish
+                WHERE user_id = :user_id
+                """
+            ),
+            {"user_id": user_id},
+        )
+        row = result.fetchone()
+        if not row:
+            return None
+        return {
+            "enabled": bool(row.enabled),
+            "social_account_ids": list(row.social_account_ids or []),
+            "clips_per_task": int(row.clips_per_task),
+            "min_virality_score": int(row.min_virality_score),
+            "post_times": list(row.post_times or []),
+            "timezone": row.timezone,
+            "privacy_level": row.privacy_level,
+            "hashtags": list(row.hashtags or []),
+            "updated_at": _iso(row.updated_at),
+        }
+
+    @staticmethod
+    async def upsert_auto_publish(
+        db: AsyncSession, user_id: str, rule: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        await db.execute(
+            text(
+                """
+                INSERT INTO social_auto_publish (
+                    user_id, enabled, social_account_ids, clips_per_task, min_virality_score,
+                    post_times, timezone, privacy_level, hashtags, created_at, updated_at
+                )
+                VALUES (
+                    :user_id, :enabled, :social_account_ids, :clips_per_task, :min_virality_score,
+                    :post_times, :timezone, :privacy_level, :hashtags, NOW(), NOW()
+                )
+                ON CONFLICT (user_id) DO UPDATE SET
+                    enabled = EXCLUDED.enabled,
+                    social_account_ids = EXCLUDED.social_account_ids,
+                    clips_per_task = EXCLUDED.clips_per_task,
+                    min_virality_score = EXCLUDED.min_virality_score,
+                    post_times = EXCLUDED.post_times,
+                    timezone = EXCLUDED.timezone,
+                    privacy_level = EXCLUDED.privacy_level,
+                    hashtags = EXCLUDED.hashtags,
+                    updated_at = NOW()
+                """
+            ),
+            {"user_id": user_id, **rule},
+        )
+        await db.commit()
+        saved = await SocialRepository.get_auto_publish(db, user_id)
+        assert saved is not None
+        return saved
+
+    @staticmethod
+    async def list_taken_slots(
+        db: AsyncSession, social_account_id: str, since: datetime
+    ) -> List[datetime]:
+        """Scheduled times already claimed on an account by pending posts."""
+        result = await db.execute(
+            text(
+                """
+                SELECT scheduled_for
+                FROM social_posts
+                WHERE social_account_id = :account_id
+                  AND status IN ('scheduled', 'queued', 'publishing')
+                  AND scheduled_for IS NOT NULL
+                  AND scheduled_for >= :since
+                """
+            ),
+            {"account_id": social_account_id, "since": since},
+        )
+        return [row.scheduled_for for row in result.fetchall()]
+
+    @staticmethod
+    async def clip_has_post(db: AsyncSession, clip_id: str, social_account_id: str) -> bool:
+        """Whether this clip was already sent (or is pending) on this account."""
+        result = await db.execute(
+            text(
+                """
+                SELECT 1 FROM social_posts
+                WHERE clip_id = :clip_id
+                  AND social_account_id = :account_id
+                  AND status <> 'cancelled'
+                LIMIT 1
+                """
+            ),
+            {"clip_id": clip_id, "account_id": social_account_id},
+        )
+        return result.scalar() is not None
+
 
 def _to_float(value: Any) -> Optional[float]:
     if value is None:

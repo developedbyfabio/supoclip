@@ -112,5 +112,24 @@
     "disconnect": "Disconnect",
     "analytics": "Analytics",
     "analyticsHint": "Views, likes and comments from your published clips, by platform, hook and length."
+  },
+  "autoPublish": {
+    "heading": "Automatic posting",
+    "enabled": "Automatically post the best clips",
+    "enabledHint": "When a video finishes processing, its highest-scoring clips are scheduled into your next free slots.",
+    "accounts": "Post to",
+    "noAccounts": "Connect an account above to use automatic posting.",
+    "clipsPerTask": "Clips per video",
+    "minScore": "Minimum score (0–100)",
+    "postTimes": "Posting times",
+    "postTimesHint": "One clip per time slot, per account. Timezone: {timezone}.",
+    "privacy": "Visibility",
+    "hashtags": "Hashtags",
+    "save": "Save",
+    "saving": "Saving...",
+    "savedOn": "Automatic posting is on. It applies to the next videos you process.",
+    "savedOff": "Settings saved. Automatic posting is off.",
+    "loadError": "Couldn't load automatic posting.",
+    "saveError": "Couldn't save automatic posting."
   }
 }

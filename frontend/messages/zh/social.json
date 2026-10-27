@@ -112,5 +112,24 @@
     "disconnect": "断开连接",
     "analytics": "数据分析",
     "analyticsHint": "已发布片段的观看、点赞和评论，按平台、钩子和时长查看。"
+  },
+  "autoPublish": {
+    "heading": "自动发布",
+    "enabled": "自动发布最佳片段",
+    "enabledHint": "视频处理完成后，评分最高的片段会排入你接下来的空闲时段。",
+    "accounts": "发布到",
+    "noAccounts": "请先在上方连接账号以使用自动发布。",
+    "clipsPerTask": "每个视频的片段数",
+    "minScore": "最低评分（0–100）",
+    "postTimes": "发布时间",
+    "postTimesHint": "每个时段、每个账号发布一个片段。时区：{timezone}。",
+    "privacy": "可见性",
+    "hashtags": "话题标签",
+    "save": "保存",
+    "saving": "正在保存...",
+    "savedOn": "自动发布已开启，将应用于之后处理的视频。",
+    "savedOff": "设置已保存，自动发布已关闭。",
+    "loadError": "无法加载自动发布设置。",
+    "saveError": "无法保存自动发布设置。"
   }
 }
