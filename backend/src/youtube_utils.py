@@ -39,6 +39,22 @@ YOUTUBE_DOWNLOAD_PROVIDER_YTDLP = "yt_dlp"
 YOUTUBE_DOWNLOAD_PROVIDER_APIFY = "apify"
 YOUTUBE_DOWNLOAD_PROVIDER_RAPIDAPI = "rapidapi"
 YOUTUBE_DATA_API_URL = "https://www.googleapis.com/youtube/v3/videos"
+YOUTUBE_HOSTS = {"youtube.com", "youtu.be", "youtube-nocookie.com"}
+
+
+def _is_youtube_host(url: str) -> bool:
+    """Accept only YouTube hosts, so yt-dlp never fetches an arbitrary URL."""
+    candidate = url if "://" in url else f"https://{url}"
+    if "\\" in candidate or any(ch.isspace() for ch in candidate):
+        return False
+    try:
+        parsed = urlparse(candidate)
+    except ValueError:
+        return False
+    if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password:
+        return False
+    host = (parsed.hostname or "").lower().rstrip(".")
+    return any(host == domain or host.endswith(f".{domain}") for domain in YOUTUBE_HOSTS)
 
 
 class YouTubeDownloader:
@@ -92,7 +108,7 @@ class YouTubeDownloader:
             "extract_flat": False,
             "writeinfojson": False,
             # Additional bypass options
-            "nocheckcertificate": True,
+            "nocheckcertificate": False,
             "prefer_insecure": False,
             "age_limit": None,
         }
@@ -116,7 +132,7 @@ def _build_info_options(task_id: Optional[str] = None) -> Dict[str, Any]:
             "Accept-Language": "en-US,en;q=0.9",
             "Connection": "keep-alive",
         },
-        "nocheckcertificate": True,
+        "nocheckcertificate": False,
     }
     if proxy_configured():
         # Metadata must leave through the same proxy as the media, or YouTube
@@ -243,6 +259,8 @@ def get_youtube_video_id(url: str) -> Optional[str]:
         return None
 
     url = url.strip()
+    if not _is_youtube_host(url):
+        return None
 
     # Comprehensive regex patterns for different YouTube URL formats
     patterns = [
